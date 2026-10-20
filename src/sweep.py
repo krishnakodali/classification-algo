@@ -17,7 +17,7 @@ import mlflow
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
 
-from train import EXPERIMENT_NAME, load_data
+from train import EXPERIMENT_NAME, get_or_create_experiment, load_data
 
 PARAM_GRID = {
     "n_estimators": [10, 50, 200],
@@ -31,7 +31,7 @@ def main():
         test_size=0.3, random_state=42
     )
 
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    get_or_create_experiment(EXPERIMENT_NAME)
 
     keys = list(PARAM_GRID.keys())
     combos = list(itertools.product(*PARAM_GRID.values()))

@@ -35,6 +35,14 @@ from sklearn.model_selection import train_test_split
 EXPERIMENT_NAME = "diverse-random-forest"
 ARTIFACT_DIR = "artifacts"
 
+# Artifacts (plots, reports, the model) are stored wherever the MLflow
+# experiment's artifact location points. Setting MLFLOW_S3_BUCKET makes new
+# experiments store artifacts in S3 instead of the local ./mlruns folder;
+# leave it unset to keep everything local. See README.md "Saving artifacts
+# to S3" for the required AWS credentials and bucket setup.
+MLFLOW_S3_BUCKET = os.environ.get("MLFLOW_S3_BUCKET")
+MLFLOW_S3_PREFIX = os.environ.get("MLFLOW_S3_PREFIX", "random-forest-mlflow").strip("/")
+
 # Dataset "shape" — tweak these to make the problem easier/harder.
 N_SAMPLES = 3000
 N_FEATURES = 20
@@ -137,6 +145,30 @@ def plot_feature_importance(model, feature_names, out_path):
     plt.close(fig)
 
 
+def get_or_create_experiment(name: str) -> str:
+    """Set the active MLflow experiment, creating it with an S3 artifact
+    location if MLFLOW_S3_BUCKET is set.
+
+    MLflow only lets you choose an experiment's artifact location at
+    creation time, so this must run before any run is logged. If the
+    experiment already exists (e.g. from an earlier local-only run), its
+    existing artifact location is kept as-is — delete the experiment in the
+    MLflow UI first if you want to point an existing experiment at S3.
+    """
+    experiment = mlflow.get_experiment_by_name(name)
+    if experiment is not None:
+        mlflow.set_experiment(experiment_id=experiment.experiment_id)
+        return experiment.experiment_id
+
+    artifact_location = None
+    if MLFLOW_S3_BUCKET:
+        artifact_location = f"s3://{MLFLOW_S3_BUCKET}/{MLFLOW_S3_PREFIX}"
+
+    experiment_id = mlflow.create_experiment(name, artifact_location=artifact_location)
+    mlflow.set_experiment(experiment_id=experiment_id)
+    return experiment_id
+
+
 def main():
     args = parse_args()
     os.makedirs(ARTIFACT_DIR, exist_ok=True)
@@ -145,7 +177,7 @@ def main():
         args.test_size, args.random_state
     )
 
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    get_or_create_experiment(EXPERIMENT_NAME)
 
     with mlflow.start_run(run_name=args.run_name):
         params = {
@@ -196,7 +228,14 @@ def main():
         plot_feature_importance(model, X_train.columns, fi_path)
         mlflow.log_artifact(fi_path)
 
-        mlflow.sklearn.log_model(model, artifact_path="model", input_example=X_train.head(3))
+        mlflow.sklearn.log_model(
+            model,
+            artifact_path="model",
+            input_example=X_train.head(3),
+            # We trained this model ourselves in this run, so it's safe to
+            # trust sklearn's own tree storage type for skops serialization.
+            skops_trusted_types=["sklearn.tree._tree.Tree"],
+        )
 
         print("Params:", params)
         print("Metrics:", metrics)

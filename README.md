@@ -146,7 +146,52 @@ By default MLflow stores run metadata in a local `mlflow.db` SQLite file and
 artifacts under `mlruns/`, both created automatically the first time you run
 `train.py` or `sweep.py` — no external server needed.
 
-## 8. Loading a saved model later
+## 8. Saving artifacts to S3
+
+By default, artifacts (plots, the classification report, the model) are
+written to the local `mlruns/` folder. To store them in an S3 bucket
+instead, set these environment variables before running `train.py` or
+`sweep.py`:
+
+```bash
+export MLFLOW_S3_BUCKET=your-bucket-name     # required to enable S3
+export MLFLOW_S3_PREFIX=random-forest-mlflow # optional, defaults to this
+
+# Standard AWS credentials — any of the usual boto3 methods work:
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_DEFAULT_REGION=us-east-1
+# (or export AWS_PROFILE=your-profile to use ~/.aws/credentials instead)
+```
+
+Then run as usual:
+
+```bash
+python src/train.py
+```
+
+New runs will be stored under `s3://your-bucket-name/random-forest-mlflow/...`.
+
+**Notes:**
+- MLflow only lets you set an experiment's artifact location at creation
+  time. If you already ran `train.py` locally (creating the
+  `diverse-random-forest` experiment with a local artifact location),
+  setting `MLFLOW_S3_BUCKET` afterwards won't retroactively move it — delete
+  the experiment in the MLflow UI (or use a different `EXPERIMENT_NAME`)
+  before switching to S3, so it gets created fresh with the S3 location.
+- You need an S3 bucket that already exists (this project doesn't create
+  one for you) and credentials with at least `s3:PutObject`, `s3:GetObject`,
+  `s3:ListBucket`, and `s3:DeleteObject` on that bucket:
+  ```bash
+  aws s3 mb s3://your-bucket-name
+  ```
+- `mlflow ui` also needs the same AWS credentials available in its
+  environment, since it fetches artifacts (plots, models) directly from S3
+  when you view a run.
+- For an S3-compatible store (e.g. MinIO) instead of AWS, also set
+  `MLFLOW_S3_ENDPOINT_URL=http://your-host:9000`.
+
+## 9. Loading a saved model later
 
 Every run's model is logged as an MLflow model artifact, so you can reload
 it (e.g. in a notebook or another script) without re-training:
